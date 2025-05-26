@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { websocketService } from '@/services/websocket';
 
@@ -6,7 +6,7 @@ import { websocketService } from '@/services/websocket';
 const APPLE_CONFIG = {
   // Apple开发者账户相关信息
   teamId: 'UG277K6KVJ',            // 您的Team ID
-  clientId: 'world.dramai.dramai', // 您的Service ID (不是Bundle ID)
+  clientId: 'world.dramai.dramai', // 您的Bundle ID
   keyId: 'M4Q94M576A',             // 您的Key ID
   // 私钥，实际使用时建议从环境变量获取
   privateKey: `-----BEGIN PRIVATE KEY-----
@@ -41,11 +41,64 @@ const AppleLoginButton: React.FC<AppleLoginButtonProps> = ({
   onSuccess,
   onError
 }) => {
-  // 处理成功登录的回调
-  const handleSignInSuccess = useCallback((event: CustomEvent) => {
+  useEffect(() => {
+    // 加载Apple认证JS SDK
+    const loadAppleScript = () => {
+      const script = document.createElement('script');
+      script.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js';
+      script.async = true;
+      script.id = 'apple-sign-in-script';
+      script.onload = initAppleLogin;
+      document.body.appendChild(script);
+    };
+
+    // 检查脚本是否已加载
+    if (!document.getElementById('apple-sign-in-script')) {
+      loadAppleScript();
+    } else {
+      initAppleLogin();
+    }
+
+    return () => {
+      // 清理函数 - 保留脚本但移除事件监听
+    };
+  }, []);
+
+  const initAppleLogin = () => {
+    // 确保全局 AppleID 对象存在
+    if (window.AppleID) {
+      try {
+        window.AppleID.auth.init({
+          clientId: APPLE_CONFIG.clientId,
+          scope: APPLE_CONFIG.scope,
+          redirectURI: APPLE_CONFIG.redirectURI,
+          state: generateRandomString(16),
+          usePopup: APPLE_CONFIG.usePopup
+        });
+      } catch (error) {
+        console.error('Apple Sign In 初始化失败:', error);
+      }
+    }
+  };
+
+  // 生成随机字符串用于state参数
+  const generateRandomString = (length: number) => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
+  };
+
+  const handleAppleLogin = async () => {
     try {
-      console.log('Apple登录成功:', event.detail.data);
-      const response = event.detail.data;
+      if (!window.AppleID) {
+        throw new Error('Apple Sign In SDK 未加载');
+      }
+
+      const response = await window.AppleID.auth.signIn();
+      console.log('Apple登录响应:', response);
       
       // 处理授权响应
       if (response.authorization) {
@@ -69,11 +122,20 @@ const AppleLoginButton: React.FC<AppleLoginButtonProps> = ({
           localStorage.setItem('userInfo', JSON.stringify(userInfo));
           localStorage.setItem('isSignedIn', 'true');
           
-          // 调用websocketService的appleLogin方法进行登录
-          websocketService.appleLogin({
+          // 调用websocketService进行登录
+          websocketService.login({
+            loginType: APPLE_CONFIG.loginType,
+            name: userId,
+            password: '', // Apple 登录不需要密码
+            nickName: tokenData.email ? tokenData.email.split('@')[0] : `apple_${tokenData.sub.substring(0, 8)}`,
+            avatar: APPLE_CONFIG.defaultAvatar,
+            sex: APPLE_CONFIG.defaultSex,
+            timeZone: APPLE_CONFIG.timeZone,
+            clientOs: APPLE_CONFIG.clientOs,
             userId: tokenData.sub,
-            email: tokenData.email,
-            name: tokenData.name // Apple可能会返回用户名
+            inviteCode: '',
+            invite: '',
+            address: ''
           });
           
           // 调用成功回调
@@ -85,88 +147,8 @@ const AppleLoginButton: React.FC<AppleLoginButtonProps> = ({
         throw new Error('授权响应不完整');
       }
     } catch (error) {
-      console.error('Apple 登录处理失败:', error);
-      onError?.(error);
-    }
-  }, [onSuccess, onError]);
-
-  // 处理登录失败的回调
-  const handleSignInFailure = useCallback((event: CustomEvent) => {
-    console.error('Apple登录失败:', event.detail.error);
-    onError?.(event.detail.error);
-  }, [onError]);
-
-  useEffect(() => {
-    // 加载Apple认证JS SDK
-    const loadAppleScript = () => {
-      const script = document.createElement('script');
-      script.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js';
-      script.async = true;
-      script.id = 'apple-sign-in-script';
-      script.onload = initAppleLogin;
-      document.body.appendChild(script);
-    };
-
-    // 检查脚本是否已加载
-    if (!document.getElementById('apple-sign-in-script')) {
-      loadAppleScript();
-    } else {
-      initAppleLogin();
-    }
-
-    // 添加事件监听器
-    document.addEventListener('AppleIDSignInOnSuccess', handleSignInSuccess as EventListener);
-    document.addEventListener('AppleIDSignInOnFailure', handleSignInFailure as EventListener);
-
-    return () => {
-      // 清理函数 - 移除事件监听器
-      document.removeEventListener('AppleIDSignInOnSuccess', handleSignInSuccess as EventListener);
-      document.removeEventListener('AppleIDSignInOnFailure', handleSignInFailure as EventListener);
-    };
-  }, [handleSignInSuccess, handleSignInFailure]);
-
-  const initAppleLogin = () => {
-    // 确保全局 AppleID 对象存在
-    if (window.AppleID) {
-      try {
-        // 根据文档初始化Apple登录
-        window.AppleID.auth.init({
-          clientId: APPLE_CONFIG.clientId,
-          scope: APPLE_CONFIG.scope,
-          redirectURI: APPLE_CONFIG.redirectURI,
-          state: generateRandomString(16),
-          nonce: generateRandomString(16), // 添加nonce参数，提高安全性
-          usePopup: APPLE_CONFIG.usePopup  // 使用弹窗模式，在Facebook等第三方app中可能会被阻止
-        });
-      } catch (error) {
-        console.error('Apple Sign In 初始化失败:', error);
-      }
-    }
-  };
-
-  // 生成随机字符串用于state和nonce参数
-  const generateRandomString = (length: number) => {
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    return result;
-  };
-
-  const handleAppleLogin = async () => {
-    try {
-      if (!window.AppleID) {
-        throw new Error('Apple Sign In SDK 未加载');
-      }
-
-      // 使用Promise方式调用Apple登录
-      await window.AppleID.auth.signIn();
-      // 注意：实际的登录结果处理会在事件监听器中进行
-      console.log('Apple登录请求已发送');
-    } catch (error) {
       console.error('Apple 登录失败:', error);
-      onError?.(error);
+      // onError?.(error);
     }
   };
 
@@ -195,7 +177,7 @@ const AppleLoginButton: React.FC<AppleLoginButtonProps> = ({
       >
         <path d="M17.05 20.28c-.98.95-2.05.88-3.08.41-1.09-.47-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.41C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.19 2.31-.89 3.51-.84 1.54.07 2.7.61 3.44 1.57-3.14 1.88-2.29 5.13.22 6.41-.5 1.21-1.15 2.41-2.25 3.03zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
       </svg>
-      使用Apple登录
+      Sign in with Apple
     </button>
   );
 };
