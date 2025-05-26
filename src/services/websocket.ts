@@ -335,7 +335,9 @@ class WebSocketService {
 
   // Business methods
   login(loginData: LoginRequestData) {
-    this.send(Commands.LOGIN, loginData);
+    this.send(Commands.LOGIN, loginData)
+    console.log('Commands.LOGIN', Commands.LOGIN);
+    console.log('loginData', loginData);
   }
 
   // 手动普通登录方法
@@ -446,6 +448,26 @@ class WebSocketService {
       timeZone: 2, // 默认时区
       clientOs: "web",
       userId: googleUser.getBasicProfile().getId(),
+      inviteCode: '',
+      invite: '',
+      address: ''
+    };
+
+    this.login(loginData);
+  }
+
+  // 处理 Apple 登录
+  appleLogin(appleUserData: { userId: string; email?: string; name?: string }) {
+    const loginData: LoginRequestData = {
+      loginType: 3, // Apple 登录类型
+      name: appleUserData.email || appleUserData.userId,
+      password: '', // Apple 登录不需要密码
+      nickName: appleUserData.name || (appleUserData.email ? appleUserData.email.split('@')[0] : `apple_${appleUserData.userId.substring(0, 8)}`),
+      avatar: 0, // 默认头像
+      sex: 1, // 默认性别
+      timeZone: 2, // 默认时区
+      clientOs: "web",
+      userId: appleUserData.userId,
       inviteCode: '',
       invite: '',
       address: ''
